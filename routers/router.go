@@ -2,9 +2,7 @@ package routers
 
 import (
 	"backend/controllers"
-	"backend/models"
-	"strconv"
-	"strings"
+	"encoding/json"
 
 	"github.com/beego/beego/v2/server/web/context"
 
@@ -12,33 +10,21 @@ import (
 )
 
 func init() {
-	beego.InsertFilter("/*", beego.BeforeRouter, func(context *context.Context) {
-		if context.Request.RequestURI != "/login" && context.Request.RequestURI != "/register" {
-			cookie, err := context.Request.Cookie("token")
-			if err != nil {
-				//进入/projects和/logout必须要有token和cookie
-				if context.Request.RequestURI == "/projects" || context.Request.RequestURI == "/logout" {
-					context.ResponseWriter.Write([]byte("请先登录"))
-					context.Redirect(302, "/login")
-				} else if context.Request.Method != "GET" {
-					//其他页面有:project_id可以看，但不能改动
-					user_id := models.CheckToken(cookie.Value)
-					//路由中包含project_id
-					if strings.Index(context.Request.RequestURI, "/projects/") >= 0 {
-						projectIdStr := context.Input.Param(":project_id")
-						projectId, _ := strconv.Atoi(projectIdStr)
-						//根据project_id找见项目
-						project, pro_err := models.GetProject(projectId)
-						//路由错误
-						if pro_err != nil {
-							context.ResponseWriter.Write([]byte("路由错误"))
-							context.Redirect(404, "/login")
-						} else if project.Creator.Id != user_id {
-							context.ResponseWriter.Write([]byte("您无权操作，请先登录"))
-							context.Redirect(302, "/login")
-						}
-					}
+	beego.InsertFilter("/*", beego.BeforeRouter, func(ctx *context.Context) {
 
+		if ctx.Request.RequestURI != "/login" && ctx.Request.RequestURI != "/register" {
+			cookie := ctx.Request.Header.Get("token")
+
+			//进入/projects和/logout必须要有token和cookie
+			if ctx.Request.RequestURI == "/projects" || ctx.Request.RequestURI == "/logout" || ctx.Request.Method != "GET" {
+				if cookie == "" {
+					resp := map[string]interface{}{
+						"code":    50000,
+						"message": "缺少token",
+					}
+					ctx.ResponseWriter.Header().Set("Content-Type", "application/json")
+					ctx.ResponseWriter.WriteHeader(200)
+					json.NewEncoder(ctx.ResponseWriter).Encode(resp)
 				}
 			}
 		}
@@ -52,6 +38,7 @@ func init() {
 	beego.Router("/projects/:project_id", &controllers.ProjectController{})
 	beego.Router("/projects/:project_id/files", &controllers.FilesController{})
 	beego.Router("/projects/:project_id/files/:file_name", &controllers.FileController{})
+	beego.Router("/search_project?:filter_words", &controllers.SearchController{})
 	beego.Router("/resetpassword", &controllers.ResetPasswordController{})
 	beego.Router("/sendverifyemail", &controllers.ForgetPasswdController{}, "post:SendVerificationEmail")
 	beego.Router("/checkverifyemail", &controllers.ForgetPasswdController{}, "post:CheckVerificationEmail")
